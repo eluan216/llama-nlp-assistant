@@ -2,13 +2,21 @@
 
 An end-to-end Retrieval-Augmented Generation (RAG) system for document question-answering and summarization using open-source LLMs from Hugging Face.
 
+## Live Demo
+
+Try the deployed app on Streamlit Cloud:
+
+**https://llama-nlp-assistant-4hyjezelnvzdrndrsxqjts.streamlit.app**
+
+> First load may take 1–2 minutes while the model downloads. After that, Q&A and summarization run in the browser UI.
+
 ## Features
 
 - **Document Upload**: Support for PDF and TXT files
 - **Intelligent Chunking**: Recursive character text splitting with overlap
 - **Semantic Embeddings**: High-quality sentence embeddings via `sentence-transformers`
 - **Vector Retrieval**: Fast similarity search with FAISS
-- **Open-Source LLM**: Powered by Microsoft Phi-3-mini (or easily swappable models)
+- **Open-Source LLM**: Default `HuggingFaceTB/SmolLM2-360M-Instruct` (fits Streamlit Cloud free tier)
 - **Question Answering**: Context-aware answers grounded in your documents
 - **Summarization**: Generate concise summaries of uploaded documents
 - **Simple Evaluation**: Basic relevance and response quality metrics
@@ -32,35 +40,26 @@ llama-nlp-assistant/
 └── README.md
 ```
 
-## Quick Start
-
-### 1. Clone & Install
+## Quick Start (local)
 
 ```bash
 git clone https://github.com/eluan216/llama-nlp-assistant.git
 cd llama-nlp-assistant
 python -m venv venv
-source venv/bin/activate   # On Windows: venv\\Scripts\\activate
+source venv/bin/activate   # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-### 2. Run the App
-
-```bash
 streamlit run app.py
 ```
 
-The app will open in your browser. Upload a PDF or TXT file, ask questions, or request a summary.
+## Deploy on Streamlit Cloud
 
-> **Note**: The first run will download the embedding model (~90MB) and the LLM (~2.3GB for Phi-3-mini). Subsequent runs are much faster.
+1. Go to [share.streamlit.io](https://share.streamlit.io)
+2. Sign in with GitHub
+3. Deploy `eluan216/llama-nlp-assistant`
+4. Set **Main file path** to `app.py` (not `streamlit_app.py`)
+5. Click **Deploy**
 
-### 3. Hardware Recommendations
-
-| Setup              | Recommended Model              | Notes                          |
-|--------------------|--------------------------------|--------------------------------|
-| CPU only           | `microsoft/Phi-3-mini-4k-instruct` | Works, but slower generation  |
-| GPU (8GB+)         | Same or larger models          | Significantly faster           |
-| Low memory         | Quantized models or smaller LLMs | See `src/llm_pipeline.py`     |
+After you push new commits to `main`, use **Manage app → Reboot** so Streamlit picks up changes.
 
 ## How It Works (RAG Pipeline)
 
@@ -70,31 +69,6 @@ The app will open in your browser. Upload a PDF or TXT file, ask questions, or r
 4. **Index** → Store in FAISS for fast retrieval
 5. **Retrieve** → Find top-k relevant chunks for a query
 6. **Generate** → LLM answers using retrieved context
-
-## Configuration
-
-Key parameters can be adjusted in the Streamlit sidebar or directly in the source modules:
-
-- Chunk size / overlap
-- Number of retrieved documents (`top_k`)
-- Generation temperature / max tokens
-- Model choice
-
-## Evaluation
-
-The system includes basic evaluation helpers in `src/evaluation.py`:
-
-- Context relevance scoring
-- Simple ROUGE-style overlap metrics
-- Answer-context grounding score
-
-## Extending the Project
-
-- Swap the LLM in `src/llm_pipeline.py` (Gemma-2, Mistral, Llama-3.2, etc.)
-- Add fine-tuning with PEFT/LoRA
-- Replace FAISS with Chroma or Qdrant
-- Add multi-document chat history
-- Deploy with Docker + Hugging Face Spaces / Streamlit Cloud
 
 ## Tech Stack
 
