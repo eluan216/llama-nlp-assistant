@@ -17,7 +17,10 @@ class EmbeddingModel:
         """
         self.model_name = model_name
         self.model = SentenceTransformer(model_name)
-        self.dimension = self.model.get_sentence_embedding_dimension()
+        if hasattr(self.model, "get_embedding_dimension"):
+            self.dimension = self.model.get_embedding_dimension()
+        else:
+            self.dimension = self.model.get_sentence_embedding_dimension()
 
     def embed(self, texts: Union[str, List[str]], batch_size: int = 32) -> np.ndarray:
         """Compute embeddings for one or more texts.
@@ -37,7 +40,7 @@ class EmbeddingModel:
             batch_size=batch_size,
             show_progress_bar=len(texts) > 50,
             convert_to_numpy=True,
-            normalize_embeddings=True,  # cosine similarity friendly
+            normalize_embeddings=True,
         )
         return embeddings.astype(np.float32)
 
