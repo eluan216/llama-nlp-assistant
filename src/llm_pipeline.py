@@ -1,4 +1,7 @@
-"""LLM generation pipeline using Hugging Face Transformers."""
+"""LLM generation pipeline using Hugging Face Transformers.
+
+Optimized for Streamlit Cloud free tier (CPU + limited RAM).
+"""
 
 from typing import Optional
 
@@ -9,22 +12,20 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 class LLMPipeline:
     """Lightweight wrapper for instruction-tuned causal LMs."""
 
-    # Default: small, capable, and relatively fast even on CPU
-    DEFAULT_MODEL = "microsoft/Phi-3-mini-4k-instruct"
+    # Small model that fits Streamlit Cloud free tier (~360M parameters)
+    DEFAULT_MODEL = "HuggingFaceTB/SmolLM2-360M-Instruct"
 
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL,
         device: Optional[str] = None,
         torch_dtype: Optional[torch.dtype] = None,
-        load_in_4bit: bool = False,
     ):
         """
         Args:
             model_name: Hugging Face model id.
             device: "cuda", "cpu", or None (auto).
             torch_dtype: Optional dtype override.
-            load_in_4bit: Use bitsandbytes 4-bit quantization (requires GPU + bitsandbytes).
         """
         self.model_name = model_name
 
@@ -33,29 +34,24 @@ class LLMPipeline:
         self.device = device
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name, trust_remote_code=True
+            model_name,
+            trust_remote_code=True,
         )
 
+        # Force low memory usage on CPU (Streamlit Cloud)
         model_kwargs = {
             "trust_remote_code": True,
-            "device_map": "auto" if device == "cuda" else None,
+            "low_cpu_mem_usage": True,
         }
 
         if torch_dtype is not None:
             model_kwargs["torch_dtype"] = torch_dtype
         elif device == "cuda":
             model_kwargs["torch_dtype"] = torch.float16
-
-        if load_in_4bit and device == "cuda":
-            try:
-                from transformers import BitsAndBytesConfig
-
-                model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16,
-                )
-            except ImportError:
-                pass  # fall back to normal loading
+            model_kwargs["device_map"] = "auto"
+        else:
+            # CPU: use float32 and keep it simple
+            model_kwargs["torch_dtype"] = torch.float32
 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name, **model_kwargs
@@ -64,21 +60,33 @@ class LLMPipeline:
         if device == "cpu":
             self.model = self.model.to("cpu")
 
+        self.model.eval()
+
         self.pipe = pipeline(
             "text-generation",
             model=self.model,
             tokenizer=self.tokenizer,
-            device=0 if device == "cuda" else -1,
+            device=-1 if device == "cpu" else 0,
         )
 
     def _build_prompt(self, system: str, user: str) -> str:
-        """Build a chat-style prompt compatible with Phi-3 / most instruct models."""
+        """Build a chat-style prompt compatible with most instruct models."""
+        name = self.model_name.lower()
+
         # Phi-3 style
-        if "phi-3" in self.model_name.lower():
+        if "phi-3" in name:
             return (
                 f"<|system|>\n{system}<|end|>\n"
                 f"<|user|>\n{user}<|end|>\n"
                 f"<|assistant|>\n"
+            )
+
+        # SmolLM / ChatML style
+        if "smollm" in name or "chatml" in name:
+            return (
+                f"<|im_start|>system\n{system}<|im_end|>\n"
+                f"<|im_start|>user\n{user}<|im_end|>\n"
+                f"<|im_start|>assistant\n"
             )
 
         # Generic fallback
@@ -87,7 +95,7 @@ class LLMPipeline:
     def generate(
         self,
         prompt: str,
-        max_new_tokens: int = 512,
+        max_new_tokens: int = 256,
         temperature: float = 0.3,
         top_p: float = 0.9,
         do_sample: bool = True,
@@ -108,7 +116,7 @@ class LLMPipeline:
         self,
         question: str,
         context: str,
-        max_new_tokens: int = 400,
+        max_new_tokens: int = 200,
         temperature: float = 0.2,
     ) -> str:
         """Answer a question given retrieved context."""
@@ -117,6 +125,10 @@ class LLMPipeline:
             "provided context. If the context does not contain enough information, "
             "say so clearly. Be concise and accurate."
         )
+        # Keep context short for small models / free tier
+        if len(context) > 2500:
+            context = context[:2500] + "\n\n[Context truncated...]"
+
         user = f"Context:\n{context}\n\nQuestion: {question}"
         prompt = self._build_prompt(system, user)
         return self.generate(
@@ -129,7 +141,7 @@ class LLMPipeline:
     def summarize(
         self,
         text: str,
-        max_new_tokens: int = 300,
+        max_new_tokens: int = 180,
         temperature: float = 0.3,
     ) -> str:
         """Produce a concise summary of the given text."""
@@ -137,8 +149,8 @@ class LLMPipeline:
             "You are a helpful assistant that writes clear, concise summaries. "
             "Capture the main points without adding external information."
         )
-        # Truncate very long inputs to stay within context limits
-        max_chars = 6000
+        # Aggressive truncation for free-tier memory limits
+        max_chars = 3000
         if len(text) > max_chars:
             text = text[:max_chars] + "\n\n[Text truncated...]"
 
