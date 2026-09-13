@@ -1,6 +1,8 @@
-"""Simple evaluation helpers for RAG quality."""
+"""Evaluation helpers for RAG quality."""
 
-from typing import List, Tuple
+from __future__ import annotations
+
+from typing import Any, Dict, List, Tuple
 import re
 
 
@@ -23,34 +25,37 @@ def jaccard_similarity(a: str, b: str) -> float:
 def evaluate_relevance(
     query: str, retrieved_chunks: List[Tuple[str, float]], threshold: float = 0.3
 ) -> dict:
-    """Basic relevance evaluation of retrieved chunks.
-
-    Args:
-        query: The user question.
-        retrieved_chunks: List of (chunk, score) from the retriever.
-        threshold: Minimum score considered "relevant".
-
-    Returns:
-        Dictionary with simple metrics.
-    """
+    """Basic relevance evaluation of retrieved chunks."""
     if not retrieved_chunks:
         return {
             "num_retrieved": 0,
             "avg_score": 0.0,
             "max_score": 0.0,
+            "min_score": 0.0,
             "num_above_threshold": 0,
             "relevance_ratio": 0.0,
+            "query_token_coverage": 0.0,
         }
 
     scores = [score for _, score in retrieved_chunks]
     above = sum(1 for s in scores if s >= threshold)
 
+    query_tokens = set(tokenize(query))
+    covered = 0
+    if query_tokens:
+        chunk_tokens = set()
+        for chunk, _ in retrieved_chunks:
+            chunk_tokens |= set(tokenize(chunk))
+        covered = len(query_tokens & chunk_tokens) / len(query_tokens)
+
     return {
         "num_retrieved": len(retrieved_chunks),
         "avg_score": sum(scores) / len(scores),
         "max_score": max(scores),
+        "min_score": min(scores),
         "num_above_threshold": above,
         "relevance_ratio": above / len(scores),
+        "query_token_coverage": covered,
     }
 
 
@@ -60,14 +65,13 @@ def answer_overlap(answer: str, context: str) -> float:
 
 
 def simple_rouge_l(reference: str, candidate: str) -> float:
-    """Extremely simplified ROUGE-L approximation using longest common subsequence length ratio."""
+    """Simplified ROUGE-L approximation using LCS length ratio."""
     ref_tokens = tokenize(reference)
     cand_tokens = tokenize(candidate)
 
     if not ref_tokens or not cand_tokens:
         return 0.0
 
-    # LCS length via DP
     m, n = len(ref_tokens), len(cand_tokens)
     dp = [[0] * (n + 1) for _ in range(m + 1)]
     for i in range(1, m + 1):
@@ -83,3 +87,47 @@ def simple_rouge_l(reference: str, candidate: str) -> float:
     if precision + recall == 0:
         return 0.0
     return 2 * precision * recall / (precision + recall)
+
+
+def evaluate_answer(
+    question: str,
+    answer: str,
+    context: str,
+    retrieved_chunks: List[Tuple[str, float]] | None = None,
+) -> Dict[str, Any]:
+    """Aggregate retrieval + grounding metrics for a single Q&A turn."""
+    retrieved_chunks = retrieved_chunks or []
+    relevance = evaluate_relevance(question, retrieved_chunks)
+    grounding = answer_overlap(answer, context)
+    answer_len = len(tokenize(answer))
+    context_len = len(tokenize(context))
+
+    return {
+        "retrieval": relevance,
+        "grounding_jaccard": grounding,
+        "answer_token_count": answer_len,
+        "context_token_count": context_len,
+        "answer_too_short": answer_len < 5,
+        "likely_ungrounded": grounding < 0.05 and answer_len > 10,
+    }
+
+
+def evaluate_chat_history(history: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Summarize metrics across multi-turn chat history."""
+    qa_turns = [t for t in history if t.get("role") == "assistant" and "metrics" in t]
+    if not qa_turns:
+        return {"turns": 0}
+
+    groundings = [t["metrics"].get("grounding_jaccard", 0.0) for t in qa_turns]
+    avg_retrieval = [
+        t["metrics"].get("retrieval", {}).get("avg_score", 0.0) for t in qa_turns
+    ]
+
+    return {
+        "turns": len(qa_turns),
+        "avg_grounding": sum(groundings) / len(groundings),
+        "avg_retrieval_score": sum(avg_retrieval) / len(avg_retrieval),
+        "ungrounded_answers": sum(
+            1 for t in qa_turns if t["metrics"].get("likely_ungrounded")
+        ),
+    }
