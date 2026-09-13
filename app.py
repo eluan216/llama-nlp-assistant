@@ -24,14 +24,6 @@ MODEL_OPTIONS = {
 
 SAMPLE_PROMPTS = [
     "What is this document about?",
-    "List the key takeaways in 5 bullets.
-    ",
-    "What should I do next based on this?",
-]
-
-# Fix sample prompts - I made a typo with newline in string
-SAMPLE_PROMPTS = [
-    "What is this document about?",
     "List the key takeaways in 5 bullets.",
     "What should I do next based on this?",
 ]
@@ -146,19 +138,10 @@ st.markdown(
     margin-top: 0.5rem;
   }
 
-  .sample-btn button {
-    border-radius: 999px !important;
-    border: 1px solid #e0ddd6 !important;
-    background: #fafaf8 !important;
-    color: #1a1a1a !important;
-    font-weight: 500 !important;
-  }
-
   div[data-testid="stChatMessage"] {
     background: transparent;
   }
 
-  /* Soften default streamlit chrome */
   header[data-testid="stHeader"] {
     background: rgba(247,246,243,0.85);
     backdrop-filter: blur(8px);
@@ -226,7 +209,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Status pill when ready
 if st.session_state.vector_store is not None:
     stats = get_chunk_stats(st.session_state.chunks)
     name = st.session_state.file_name or "Document"
@@ -236,9 +218,6 @@ if st.session_state.vector_store is not None:
         unsafe_allow_html=True,
     )
 
-# ---------------------------------------------------------------------------
-# Upload card
-# ---------------------------------------------------------------------------
 uploaded_file = st.file_uploader(
     "Drop a document", type=["pdf", "txt"], label_visibility="collapsed"
 )
@@ -304,14 +283,11 @@ def render_sources(results, metrics=None):
             )
 
 
-# ---------------------------------------------------------------------------
-# Main: empty state vs workspace
-# ---------------------------------------------------------------------------
 if st.session_state.vector_store is None:
     st.markdown('<div class="empty-wrap">', unsafe_allow_html=True)
     st.markdown("**Start with a document**")
     st.caption(
-        "PDF or TXT. We’ll chunk, embed, and retrieve context for every answer."
+        "PDF or TXT. We'll chunk, embed, and retrieve context for every answer."
     )
     st.markdown("")
     st.caption("Once uploaded, try questions like:")
