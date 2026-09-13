@@ -1,7 +1,10 @@
 """Streamlit frontend for the Document Q&A and Summarization system.
 
+Features: model selector, multi-turn chat history, evaluation, RAG.
 Optimized for Streamlit Cloud free tier.
 """
+
+from __future__ import annotations
 
 import streamlit as st
 
@@ -10,11 +13,15 @@ from src.chunking import chunk_text, get_chunk_stats
 from src.embeddings import EmbeddingModel
 from src.retriever import VectorStore
 from src.llm_pipeline import LLMPipeline
-from src.evaluation import evaluate_relevance, answer_overlap
+from src.evaluation import evaluate_answer, evaluate_chat_history
 
-# ---------------------------------------------------------------------------
-# Page config
-# ---------------------------------------------------------------------------
+# Models ranked roughly by size (smallest first — best for free cloud)
+MODEL_OPTIONS = {
+    "SmolLM2-360M (recommended for free tier)": "HuggingFaceTB/SmolLM2-360M-Instruct",
+    "TinyLlama-1.1B": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "Phi-3-mini-4k (heavier)": "microsoft/Phi-3-mini-4k-instruct",
+}
+
 st.set_page_config(
     page_title="LLM Document Q&A",
     page_icon="📚",
@@ -23,16 +30,14 @@ st.set_page_config(
 )
 
 st.title("📚 LLM-Powered Document Q&A & Summarization")
-st.caption(
-    "Upload a PDF or TXT → Ask questions or generate a summary "
-    "(RAG + open-source LLM • optimized for free Streamlit Cloud)"
-)
+st.caption("RAG pipeline with model selector, chat history, and evaluation metrics")
 
-# ---------------------------------------------------------------------------
-# Sidebar controls
-# ---------------------------------------------------------------------------
+# Sidebar
 with st.sidebar:
     st.header("Settings")
+
+    model_label = st.selectbox("LLM model", list(MODEL_OPTIONS.keys()), index=0)
+    selected_model = MODEL_OPTIONS[model_label]
 
     chunk_size = st.slider("Chunk size", 200, 800, 400, 50)
     chunk_overlap = st.slider("Chunk overlap", 0, 100, 40, 10)
@@ -44,130 +49,127 @@ with st.sidebar:
     max_tokens = st.slider("Max new tokens", 64, 400, 180, 16)
 
     st.divider()
-    st.markdown("**Model**")
-    st.info(
-        "Default: `SmolLM2-360M-Instruct`\n\n"
-        "Small & fast — works on Streamlit Cloud free tier.\n"
-        "First load downloads ~700 MB."
-    )
+    if st.button("Clear chat history"):
+        st.session_state.chat_history = []
+        st.rerun()
 
-# ---------------------------------------------------------------------------
+    st.caption(f"Active model:\n`{selected_model}`")
+
 # Session state
-# ---------------------------------------------------------------------------
-if "vector_store" not in st.session_state:
-    st.session_state.vector_store = None
-if "chunks" not in st.session_state:
-    st.session_state.chunks = []
-if "raw_text" not in st.session_state:
-    st.session_state.raw_text = ""
-if "llm" not in st.session_state:
-    st.session_state.llm = None
-if "embedding_model" not in st.session_state:
-    st.session_state.embedding_model = None
+for key, default in [
+    ("vector_store", None),
+    ("chunks", []),
+    ("raw_text", ""),
+    ("llm", None),
+    ("llm_name", None),
+    ("embedding_model", None),
+    ("chat_history", []),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-# ---------------------------------------------------------------------------
-# Document upload & indexing
-# ---------------------------------------------------------------------------
+# Upload
 st.subheader("1. Upload Document")
 uploaded_file = st.file_uploader("Choose a PDF or TXT file", type=["pdf", "txt"])
 
 if uploaded_file is not None:
-    with st.spinner("Loading and processing document..."):
-        try:
-            raw_text = load_from_bytes(uploaded_file.getvalue(), uploaded_file.name)
-            st.session_state.raw_text = raw_text
-
-            chunks = chunk_text(
-                raw_text, chunk_size=chunk_size, chunk_overlap=chunk_overlap
-            )
-            st.session_state.chunks = chunks
-
-            if st.session_state.embedding_model is None:
-                with st.spinner("Loading embedding model (first time only)..."):
-                    st.session_state.embedding_model = EmbeddingModel()
-
-            vs = VectorStore(embedding_model=st.session_state.embedding_model)
-            vs.build(chunks)
-            st.session_state.vector_store = vs
-
-            stats = get_chunk_stats(chunks)
-            st.success(
-                f"Document processed! {stats['count']} chunks "
-                f"(avg length {stats['avg_len']:.0f} chars)"
-            )
-
-            with st.expander("Preview extracted text (first 1200 chars)"):
-                st.text(raw_text[:1200] + ("..." if len(raw_text) > 1200 else ""))
-
-        except Exception as e:
-            st.error(f"Failed to process document: {e}")
-
-# ---------------------------------------------------------------------------
-# Lazy load LLM
-# ---------------------------------------------------------------------------
-def get_llm() -> LLMPipeline:
-    if st.session_state.llm is None:
-        with st.spinner(
-            "Loading language model (SmolLM2-360M). "
-            "This may take 1–2 minutes on first run..."
-        ):
+    # Re-index when a new file is uploaded (by name)
+    file_id = f"{uploaded_file.name}-{uploaded_file.size}"
+    if st.session_state.get("file_id") != file_id:
+        with st.spinner("Loading and processing document..."):
             try:
-                st.session_state.llm = LLMPipeline()
-            except Exception as e:
-                st.error(
-                    f"Could not load the model. Streamlit Cloud free tier "
-                    f"may be out of memory.\n\nError: {e}"
+                raw_text = load_from_bytes(uploaded_file.getvalue(), uploaded_file.name)
+                st.session_state.raw_text = raw_text
+                st.session_state.file_id = file_id
+                st.session_state.chat_history = []
+
+                chunks = chunk_text(
+                    raw_text, chunk_size=chunk_size, chunk_overlap=chunk_overlap
                 )
+                st.session_state.chunks = chunks
+
+                if st.session_state.embedding_model is None:
+                    with st.spinner("Loading embedding model..."):
+                        st.session_state.embedding_model = EmbeddingModel()
+
+                vs = VectorStore(embedding_model=st.session_state.embedding_model)
+                vs.build(chunks)
+                st.session_state.vector_store = vs
+
+                stats = get_chunk_stats(chunks)
+                st.success(
+                    f"Document processed! {stats['count']} chunks "
+                    f"(avg length {stats['avg_len']:.0f} chars)"
+                )
+            except Exception as e:
+                st.error(f"Failed to process document: {e}")
+    else:
+        stats = get_chunk_stats(st.session_state.chunks)
+        st.success(
+            f"Document ready: {uploaded_file.name} — {stats['count']} chunks"
+        )
+
+def get_llm(model_name: str) -> LLMPipeline:
+    # Reload if model selection changed
+    if st.session_state.llm is None or st.session_state.llm_name != model_name:
+        with st.spinner(f"Loading {model_name} (first time may take a few minutes)..."):
+            try:
+                st.session_state.llm = LLMPipeline(model_name=model_name)
+                st.session_state.llm_name = model_name
+            except Exception as e:
+                st.error(f"Could not load model `{model_name}`.\n\n{e}")
                 st.stop()
     return st.session_state.llm
 
-# ---------------------------------------------------------------------------
-# Q&A / Summarization / Evaluation
-# ---------------------------------------------------------------------------
 if st.session_state.vector_store is not None:
-    tab_qa, tab_sum, tab_eval = st.tabs(
-        ["Question Answering", "Summarization", "Evaluation"]
-    )
+    tab_chat, tab_sum, tab_eval = st.tabs(["Chat Q&A", "Summarization", "Evaluation"])
 
-    with tab_qa:
-        st.subheader("2. Ask a Question")
-        question = st.text_input("Your question about the document:", key="qa_input")
+    with tab_chat:
+        st.subheader("2. Chat with your document")
 
-        if st.button("Get Answer", type="primary", key="qa_btn") and question.strip():
-            with st.spinner("Retrieving context and generating answer..."):
-                vs: VectorStore = st.session_state.vector_store
-                results = vs.search(question, top_k=top_k)
-                context = "\n\n---\n\n".join(c for c, _ in results)
+        # Render history
+        for turn in st.session_state.chat_history:
+            with st.chat_message(turn["role"]):
+                st.markdown(turn["content"])
+                if turn.get("metrics"):
+                    with st.expander("Turn metrics"):
+                        st.json(turn["metrics"])
 
-                llm = get_llm()
-                answer = llm.answer(
-                    question,
-                    context,
-                    max_new_tokens=max_tokens,
-                    temperature=temperature,
-                )
+        prompt = st.chat_input("Ask a question about the document...")
+        if prompt:
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-                st.markdown("### Answer")
-                st.write(answer)
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    vs: VectorStore = st.session_state.vector_store
+                    results = vs.search(prompt, top_k=top_k)
+                    context = "\n\n---\n\n".join(c for c, _ in results)
+                    llm = get_llm(selected_model)
+                    answer = llm.answer(
+                        prompt,
+                        context,
+                        max_new_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    metrics = evaluate_answer(prompt, answer, context, results)
+                    st.markdown(answer)
+                    with st.expander("Retrieved context & metrics"):
+                        st.json(metrics)
+                        for i, (chunk, score) in enumerate(results, 1):
+                            st.markdown(f"**Chunk {i}** (score: {score:.3f})")
+                            st.text(chunk[:400] + ("..." if len(chunk) > 400 else ""))
 
-                with st.expander("Retrieved context"):
-                    for i, (chunk, score) in enumerate(results, 1):
-                        st.markdown(f"**Chunk {i}** (score: {score:.3f})")
-                        st.text(chunk[:500] + ("..." if len(chunk) > 500 else ""))
-                        st.divider()
-
-                st.session_state.last_qa = {
-                    "question": question,
-                    "answer": answer,
-                    "context": context,
-                    "results": results,
-                }
+            st.session_state.chat_history.append(
+                {"role": "assistant", "content": answer, "metrics": metrics}
+            )
 
     with tab_sum:
-        st.subheader("2. Summarize Document")
+        st.subheader("Summarize Document")
         if st.button("Generate Summary", type="primary", key="sum_btn"):
             with st.spinner("Generating summary..."):
-                llm = get_llm()
+                llm = get_llm(selected_model)
                 summary = llm.summarize(
                     st.session_state.raw_text,
                     max_new_tokens=max_tokens,
@@ -177,26 +179,22 @@ if st.session_state.vector_store is not None:
                 st.write(summary)
 
     with tab_eval:
-        st.subheader("Simple Evaluation Metrics")
-        if "last_qa" in st.session_state:
-            data = st.session_state.last_qa
-            rel = evaluate_relevance(data["question"], data["results"])
-            overlap = answer_overlap(data["answer"], data["context"])
-
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Avg retrieval score", f"{rel['avg_score']:.3f}")
-            col2.metric("Max retrieval score", f"{rel['max_score']:.3f}")
-            col3.metric("Answer-context overlap", f"{overlap:.3f}")
-
-            st.json(rel)
+        st.subheader("Session evaluation")
+        summary_metrics = evaluate_chat_history(st.session_state.chat_history)
+        if summary_metrics.get("turns", 0) == 0:
+            st.info("Chat with the document first to populate evaluation metrics.")
         else:
-            st.info("Run a question in the Q&A tab first to see evaluation metrics.")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("QA turns", summary_metrics["turns"])
+            c2.metric("Avg grounding", f"{summary_metrics['avg_grounding']:.3f}")
+            c3.metric("Avg retrieval", f"{summary_metrics['avg_retrieval_score']:.3f}")
+            st.json(summary_metrics)
 
 else:
     st.info("↑ Upload a PDF or TXT file to get started.")
 
 st.divider()
 st.caption(
-    "Built with Hugging Face Transformers • sentence-transformers • FAISS • Streamlit | "
-    "Optimized for Streamlit Cloud free tier"
+    "Hugging Face Transformers • sentence-transformers • FAISS • Streamlit | "
+    "Model selector + chat history + evaluation"
 )
