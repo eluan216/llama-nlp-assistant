@@ -1,8 +1,16 @@
-# Runtime dependencies for Streamlit Cloud (2026 images).
-# Upper bounds reflect packages actually available on free-tier Cloud;
-# lower bounds keep a floor compatible with this codebase.
-torch>=2.1.0,<3.0.0
-torchvision>=0.16.0,<1.0.0
+# Runtime deps aligned to Streamlit Cloud free-tier (2026).
+# Cloud currently resolves torch from 2.9.x–2.14.x only; lower bound matches that.
+# torchvision lower bound follows the official torch↔torchvision matrix for 2.9+.
+# Upper bounds are major-version ceilings to limit drift without blocking Cloud wheels.
+#
+# Known-good Cloud resolution (prior successful deploy of this app):
+#   torch 2.14.0, torchvision 0.29.0, transformers 5.17.0,
+#   sentence-transformers 6.0.1, faiss-cpu 1.15.0, streamlit 1.63.0,
+#   numpy 2.5.3, pypdf 6.18.1, accelerate 1.15.0, safetensors 0.8.0,
+#   huggingface-hub 1.31.0
+#
+torch>=2.9.0,<3.0.0
+torchvision>=0.24.0,<1.0.0
 transformers>=4.40.0,<6.0.0
 sentence-transformers>=2.7.0,<7.0.0
 faiss-cpu>=1.8.0,<2.0.0
