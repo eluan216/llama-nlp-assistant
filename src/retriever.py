@@ -1,35 +1,37 @@
 """FAISS-based vector store and retriever."""
 
-from typing import List, Optional, Tuple
+from __future__ import annotations
+
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 import faiss
 import numpy as np
 
-from .embeddings import EmbeddingModel
+if TYPE_CHECKING:
+    from .embeddings import EmbeddingModel
 
 
 class VectorStore:
     """Simple FAISS IndexFlatIP (inner product) store with metadata."""
 
-    def __init__(self, embedding_model: Optional[EmbeddingModel] = None):
-        self.embedding_model = embedding_model or EmbeddingModel()
+    def __init__(self, embedding_model: Optional["EmbeddingModel"] = None):
+        if embedding_model is None:
+            from .embeddings import EmbeddingModel as _EM
+
+            embedding_model = _EM()
+        self.embedding_model = embedding_model
         self.index: Optional[faiss.Index] = None
         self.chunks: List[str] = []
         self.dimension = self.embedding_model.dimension
 
     def build(self, chunks: List[str]) -> None:
-        """Embed chunks and build the FAISS index.
-
-        Args:
-            chunks: List of text chunks to index.
-        """
+        """Embed chunks and build the FAISS index."""
         if not chunks:
             raise ValueError("Cannot build vector store from empty chunk list.")
 
         self.chunks = chunks
         embeddings = self.embedding_model.embed(chunks)
 
-        # Use inner product on normalized vectors = cosine similarity
         self.index = faiss.IndexFlatIP(self.dimension)
         self.index.add(embeddings)
 
@@ -49,15 +51,7 @@ class VectorStore:
     def search(
         self, query: str, top_k: int = 4
     ) -> List[Tuple[str, float]]:
-        """Retrieve the most relevant chunks for a query.
-
-        Args:
-            query: User question or search text.
-            top_k: Number of results to return.
-
-        Returns:
-            List of (chunk_text, score) tuples sorted by descending relevance.
-        """
+        """Retrieve the most relevant chunks for a query."""
         if self.index is None or not self.chunks:
             return []
 
@@ -66,7 +60,7 @@ class VectorStore:
 
         results: List[Tuple[str, float]] = []
         for score, idx in zip(scores[0], indices[0]):
-            if idx < 0:  # FAISS returns -1 for missing
+            if idx < 0:
                 continue
             results.append((self.chunks[idx], float(score)))
 
