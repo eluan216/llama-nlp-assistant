@@ -12,8 +12,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 class LLMPipeline:
     """Lightweight wrapper for instruction-tuned causal LMs."""
 
-    # Small model that fits Streamlit Cloud free tier (~360M parameters)
     DEFAULT_MODEL = "HuggingFaceTB/SmolLM2-360M-Instruct"
+
+    # Models that ship custom modeling code and currently require trust_remote_code.
+    _TRUST_REMOTE_CODE_MODELS = {
+        "microsoft/Phi-3-mini-4k-instruct",
+    }
 
     def __init__(
         self,
@@ -21,26 +25,21 @@ class LLMPipeline:
         device: Optional[str] = None,
         torch_dtype: Optional[torch.dtype] = None,
     ):
-        """
-        Args:
-            model_name: Hugging Face model id.
-            device: "cuda", "cpu", or None (auto).
-            torch_dtype: Optional dtype override.
-        """
         self.model_name = model_name
 
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
 
+        trust_remote = self._requires_trust_remote_code(model_name)
+
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
-            trust_remote_code=True,
+            trust_remote_code=trust_remote,
         )
 
-        # Force low memory usage on CPU (Streamlit Cloud)
         model_kwargs = {
-            "trust_remote_code": True,
+            "trust_remote_code": trust_remote,
             "low_cpu_mem_usage": True,
         }
 
@@ -50,7 +49,6 @@ class LLMPipeline:
             model_kwargs["torch_dtype"] = torch.float16
             model_kwargs["device_map"] = "auto"
         else:
-            # CPU: use float32 and keep it simple
             model_kwargs["torch_dtype"] = torch.float32
 
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -69,11 +67,20 @@ class LLMPipeline:
             device=-1 if device == "cpu" else 0,
         )
 
+    @classmethod
+    def _requires_trust_remote_code(cls, model_name: str) -> bool:
+        """Return True only for models known to need custom remote code."""
+        name = model_name.strip()
+        if name in cls._TRUST_REMOTE_CODE_MODELS:
+            return True
+        lower = name.lower()
+        if "phi-3" in lower:
+            return True
+        return False
+
     def _build_prompt(self, system: str, user: str) -> str:
-        """Build a chat-style prompt compatible with most instruct models."""
         name = self.model_name.lower()
 
-        # Phi-3 style
         if "phi-3" in name:
             return (
                 f"<|system|>\n{system}<|end|>\n"
@@ -81,7 +88,6 @@ class LLMPipeline:
                 f"<|assistant|>\n"
             )
 
-        # SmolLM / ChatML style
         if "smollm" in name or "chatml" in name:
             return (
                 f"<|im_start|>system\n{system}<|im_end|>\n"
@@ -89,7 +95,6 @@ class LLMPipeline:
                 f"<|im_start|>assistant\n"
             )
 
-        # Generic fallback
         return f"System: {system}\n\nUser: {user}\n\nAssistant:"
 
     def generate(
@@ -100,7 +105,6 @@ class LLMPipeline:
         top_p: float = 0.9,
         do_sample: bool = True,
     ) -> str:
-        """Generate a completion for a raw prompt."""
         outputs = self.pipe(
             prompt,
             max_new_tokens=max_new_tokens,
@@ -119,13 +123,11 @@ class LLMPipeline:
         max_new_tokens: int = 200,
         temperature: float = 0.2,
     ) -> str:
-        """Answer a question given retrieved context."""
         system = (
             "You are a helpful assistant that answers questions based only on the "
             "provided context. If the context does not contain enough information, "
             "say so clearly. Be concise and accurate."
         )
-        # Keep context short for small models / free tier
         if len(context) > 2500:
             context = context[:2500] + "\n\n[Context truncated...]"
 
@@ -144,12 +146,10 @@ class LLMPipeline:
         max_new_tokens: int = 180,
         temperature: float = 0.3,
     ) -> str:
-        """Produce a concise summary of the given text."""
         system = (
             "You are a helpful assistant that writes clear, concise summaries. "
             "Capture the main points without adding external information."
         )
-        # Aggressive truncation for free-tier memory limits
         max_chars = 3000
         if len(text) > max_chars:
             text = text[:max_chars] + "\n\n[Text truncated...]"
