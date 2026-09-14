@@ -5,6 +5,10 @@ from typing import Union
 
 from pypdf import PdfReader
 
+# Soft ceiling to avoid pathological uploads exhausting memory during parse.
+# Streamlit Cloud also enforces maxUploadSize; this is an application-level guard.
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MiB
+
 
 def load_pdf(file_path: Union[str, Path]) -> str:
     """Extract text from a PDF file.
@@ -45,7 +49,10 @@ def load_txt(file_path: Union[str, Path]) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Text file not found: {path}")
 
-    return path.read_text(encoding="utf-8", errors="ignore").strip()
+    text = path.read_text(encoding="utf-8", errors="ignore").strip()
+    if not text:
+        raise ValueError(f"Text file is empty: {path}")
+    return text
 
 
 def load_document(file_path: Union[str, Path]) -> str:
@@ -82,15 +89,30 @@ def load_from_bytes(file_bytes: bytes, filename: str) -> str:
     Returns:
         Extracted text.
     """
+    if file_bytes is None or len(file_bytes) == 0:
+        raise ValueError("Uploaded file is empty.")
+
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise ValueError(
+            f"File exceeds maximum allowed size ({MAX_UPLOAD_BYTES // (1024 * 1024)} MB)."
+        )
+
     suffix = Path(filename).suffix.lower()
 
     if suffix == ".txt":
-        return file_bytes.decode("utf-8", errors="ignore").strip()
+        text = file_bytes.decode("utf-8", errors="ignore").strip()
+        if not text:
+            raise ValueError("Uploaded text file contains no readable content.")
+        return text
 
     if suffix == ".pdf":
         from io import BytesIO
 
-        reader = PdfReader(BytesIO(file_bytes))
+        try:
+            reader = PdfReader(BytesIO(file_bytes))
+        except Exception as exc:
+            raise ValueError(f"Could not parse PDF: {exc}") from exc
+
         pages = []
         for page in reader.pages:
             text = page.extract_text()
