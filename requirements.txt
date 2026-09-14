@@ -1,15 +1,15 @@
-# Runtime dependencies — constrained for reproducible Streamlit Cloud builds.
-# Exact pins where known-compatible with the current codebase; ranges only when
-# exact pins risk breaking CPU-only free-tier images across platforms.
-torch>=2.1.0,<2.7.0
-transformers>=4.40.0,<5.0.0
-sentence-transformers>=2.7.0,<4.0.0
-faiss-cpu>=1.8.0,<1.12.0
-pypdf>=4.0.0,<6.0.0
-streamlit>=1.32.0,<1.45.0
-numpy>=1.24.0,<2.3.0
+# Runtime dependencies for Streamlit Cloud (2026 images).
+# Upper bounds reflect packages actually available on free-tier Cloud;
+# lower bounds keep a floor compatible with this codebase.
+torch>=2.1.0,<3.0.0
+torchvision>=0.16.0,<1.0.0
+transformers>=4.40.0,<6.0.0
+sentence-transformers>=2.7.0,<7.0.0
+faiss-cpu>=1.8.0,<2.0.0
+pypdf>=4.0.0,<7.0.0
+streamlit>=1.32.0,<2.0.0
+numpy>=1.24.0,<3.0.0
 tqdm>=4.66.0,<5.0.0
-accelerate>=0.28.0,<1.5.0
-safetensors>=0.4.0,<0.6.0
-huggingface-hub>=0.22.0,<0.30.0
-torchvision>=0.16.0,<0.23.0
+accelerate>=0.28.0,<2.0.0
+safetensors>=0.4.0,<1.0.0
+huggingface-hub>=0.22.0,<2.0.0
