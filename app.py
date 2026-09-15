@@ -1,8 +1,6 @@
 """Streamlit frontend — calm editorial UI for document Q&A (RAG).
 
-Patterns inspired by modern AI marketing sites: hierarchy, quiet chrome,
-source cards under answers, and a clear empty state. Optimized for
-Streamlit Cloud free tier.
+Optimized for Streamlit Cloud free tier.
 """
 
 from __future__ import annotations
@@ -30,137 +28,58 @@ SAMPLE_PROMPTS = [
 
 st.set_page_config(
     page_title="Document Q&A",
-    page_icon="◈",
+    page_icon="\u25c8",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# ---------------------------------------------------------------------------
-# Custom CSS — quiet chrome, cards, editorial spacing
-# ---------------------------------------------------------------------------
 st.markdown(
     """
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap');
-
-  html, body, [class*="css"]  {
-    font-family: 'Inter', system-ui, sans-serif;
-  }
-
-  .block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 4rem;
-    max-width: 920px;
-  }
-
+  html, body, [class*="css"]  { font-family: 'Inter', system-ui, sans-serif; }
+  .block-container { padding-top: 1.5rem; padding-bottom: 4rem; max-width: 920px; }
   h1, .hero-title {
     font-family: 'Instrument Serif', Georgia, serif !important;
-    font-weight: 400 !important;
-    letter-spacing: -0.02em;
+    font-weight: 400 !important; letter-spacing: -0.02em;
   }
-
-  .hero-title {
-    font-size: 2.4rem;
-    line-height: 1.15;
-    margin-bottom: 0.35rem;
-    color: #1a1a1a;
-  }
-
-  .hero-sub {
-    color: #5c5c5c;
-    font-size: 1.02rem;
-    line-height: 1.5;
-    margin-bottom: 1.75rem;
-  }
-
+  .hero-title { font-size: 2.4rem; line-height: 1.15; margin-bottom: 0.35rem; color: #1a1a1a; }
+  .hero-sub { color: #5c5c5c; font-size: 1.02rem; line-height: 1.5; margin-bottom: 1.75rem; }
   .status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0.75rem;
-    border-radius: 999px;
-    background: #ffffff;
-    border: 1px solid #e8e6e1;
-    color: #3d3d3d;
-    font-size: 0.82rem;
-    font-weight: 500;
-    margin-bottom: 1.25rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.35rem 0.75rem; border-radius: 999px; background: #ffffff;
+    border: 1px solid #e8e6e1; color: #3d3d3d; font-size: 0.82rem;
+    font-weight: 500; margin-bottom: 1.25rem;
   }
-
   .status-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #2f9e44;
-    display: inline-block;
+    width: 7px; height: 7px; border-radius: 50%; background: #2f9e44; display: inline-block;
   }
-
-  .card {
-    background: #ffffff;
-    border: 1px solid #e8e6e1;
-    border-radius: 16px;
-    padding: 1.15rem 1.25rem;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-  }
-
   .answer-card {
-    background: #ffffff;
-    border: 1px solid #e8e6e1;
-    border-radius: 16px;
-    padding: 1.25rem 1.35rem;
-    margin-top: 0.35rem;
+    background: #ffffff; border: 1px solid #e8e6e1; border-radius: 16px;
+    padding: 1.25rem 1.35rem; margin-top: 0.35rem;
   }
-
   .source-card {
-    background: #fafaf8;
-    border: 1px solid #ebe8e2;
-    border-radius: 12px;
-    padding: 0.85rem 1rem;
-    margin-bottom: 0.55rem;
-    font-size: 0.88rem;
-    color: #3a3a3a;
+    background: #fafaf8; border: 1px solid #ebe8e2; border-radius: 12px;
+    padding: 0.85rem 1rem; margin-bottom: 0.55rem; font-size: 0.88rem; color: #3a3a3a;
   }
-
   .source-meta {
-    font-size: 0.75rem;
-    color: #7a7a7a;
-    margin-bottom: 0.35rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+    font-size: 0.75rem; color: #7a7a7a; margin-bottom: 0.35rem;
+    font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase;
   }
-
   .empty-wrap {
-    background: #ffffff;
-    border: 1px solid #e8e6e1;
-    border-radius: 20px;
-    padding: 2rem 1.75rem;
-    margin-top: 0.5rem;
+    background: #ffffff; border: 1px solid #e8e6e1; border-radius: 20px;
+    padding: 2rem 1.75rem; margin-top: 0.5rem;
   }
-
-  div[data-testid="stChatMessage"] {
-    background: transparent;
-  }
-
+  div[data-testid="stChatMessage"] { background: transparent; }
   header[data-testid="stHeader"] {
-    background: rgba(247,246,243,0.85);
-    backdrop-filter: blur(8px);
+    background: rgba(247,246,243,0.85); backdrop-filter: blur(8px);
   }
-
-  .footer-note {
-    color: #8a8a8a;
-    font-size: 0.8rem;
-    text-align: center;
-    margin-top: 2.5rem;
-  }
+  .footer-note { color: #8a8a8a; font-size: 0.8rem; text-align: center; margin-top: 2.5rem; }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
-# ---------------------------------------------------------------------------
-# Session state
-# ---------------------------------------------------------------------------
 for key, default in [
     ("vector_store", None),
     ("chunks", []),
@@ -175,9 +94,6 @@ for key, default in [
     if key not in st.session_state:
         st.session_state[key] = default
 
-# ---------------------------------------------------------------------------
-# Sidebar — quiet, collapsed by default
-# ---------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("**Controls**")
     model_label = st.selectbox("Model", list(MODEL_OPTIONS.keys()), index=0)
@@ -190,7 +106,7 @@ with st.sidebar:
 
     with st.expander("Generation", expanded=False):
         temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.05)
-        max_tokens = st.slider("Max tokens", 64, 400, 180, 16)
+        max_tokens = st.slider("Max tokens", 32, 256, 96, 16)
 
     st.divider()
     if st.button("Clear conversation", use_container_width=True):
@@ -199,13 +115,10 @@ with st.sidebar:
 
     st.caption(selected_model)
 
-# ---------------------------------------------------------------------------
-# Hero
-# ---------------------------------------------------------------------------
 st.markdown('<div class="hero-title">Ask your documents</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="hero-sub">Upload a PDF or text file, then chat with grounded answers '
-    "and visible sources — a calm RAG workspace.</div>",
+    "and visible sources \u2014 a calm RAG workspace.</div>",
     unsafe_allow_html=True,
 )
 
@@ -214,7 +127,7 @@ if st.session_state.vector_store is not None:
     name = st.session_state.file_name or "Document"
     st.markdown(
         f'<div class="status-pill"><span class="status-dot"></span>'
-        f"{name} · {stats['count']} chunks · ready</div>",
+        f"{name} \u00b7 {stats['count']} chunks \u00b7 ready</div>",
         unsafe_allow_html=True,
     )
 
@@ -225,7 +138,7 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None:
     file_id = f"{uploaded_file.name}-{uploaded_file.size}"
     if st.session_state.get("file_id") != file_id:
-        with st.spinner("Indexing document…"):
+        with st.spinner("Indexing document\u2026"):
             try:
                 raw_text = load_from_bytes(uploaded_file.getvalue(), uploaded_file.name)
                 st.session_state.raw_text = raw_text
@@ -236,22 +149,23 @@ if uploaded_file is not None:
                 chunks = chunk_text(
                     raw_text, chunk_size=chunk_size, chunk_overlap=chunk_overlap
                 )
-                st.session_state.chunks = chunks
-
-                if st.session_state.embedding_model is None:
-                    st.session_state.embedding_model = EmbeddingModel()
-
-                vs = VectorStore(embedding_model=st.session_state.embedding_model)
-                vs.build(chunks)
-                st.session_state.vector_store = vs
-                st.rerun()
+                if not chunks:
+                    st.error("No text chunks produced from this document.")
+                else:
+                    st.session_state.chunks = chunks
+                    if st.session_state.embedding_model is None:
+                        st.session_state.embedding_model = EmbeddingModel()
+                    vs = VectorStore(embedding_model=st.session_state.embedding_model)
+                    vs.build(chunks)
+                    st.session_state.vector_store = vs
+                    st.rerun()
             except Exception as e:
                 st.error(f"Could not read that file. {e}")
 
 
 def get_llm(model_name: str) -> LLMPipeline:
     if st.session_state.llm is None or st.session_state.llm_name != model_name:
-        with st.spinner("Loading model (first time may take a minute)…"):
+        with st.spinner("Loading model (first time may take 1\u20132 minutes)\u2026"):
             try:
                 st.session_state.llm = LLMPipeline(model_name=model_name)
                 st.session_state.llm_name = model_name
@@ -270,14 +184,14 @@ def render_sources(results, metrics=None):
             avg = metrics.get("retrieval", {}).get("avg_score")
             cols = st.columns(2)
             if avg is not None:
-                cols[0].caption(f"Retrieval · {avg:.3f}")
+                cols[0].caption(f"Retrieval \u00b7 {avg:.3f}")
             if g is not None:
-                cols[1].caption(f"Grounding · {g:.3f}")
+                cols[1].caption(f"Grounding \u00b7 {g:.3f}")
         for i, (chunk, score) in enumerate(results, 1):
-            preview = chunk[:320] + ("…" if len(chunk) > 320 else "")
+            preview = chunk[:320] + ("\u2026" if len(chunk) > 320 else "")
             st.markdown(
                 f'<div class="source-card">'
-                f'<div class="source-meta">Source {i} · score {score:.3f}</div>'
+                f'<div class="source-meta">Source {i} \u00b7 score {score:.3f}</div>'
                 f"{preview}</div>",
                 unsafe_allow_html=True,
             )
@@ -289,7 +203,6 @@ if st.session_state.vector_store is None:
     st.caption(
         "PDF or TXT. We'll chunk, embed, and retrieve context for every answer."
     )
-    st.markdown("")
     st.caption("Once uploaded, try questions like:")
     for s in SAMPLE_PROMPTS:
         st.markdown(f"- *{s}*")
@@ -317,22 +230,36 @@ else:
                     st.markdown(turn["content"])
 
         pending = st.session_state.pop("_pending_prompt", None)
-        prompt = st.chat_input("Ask anything about this document…") or pending
+        prompt = st.chat_input("Ask anything about this document\u2026") or pending
 
         if prompt:
             st.session_state.chat_history.append({"role": "user", "content": prompt})
 
-            vs: VectorStore = st.session_state.vector_store
-            results = vs.search(prompt, top_k=top_k)
-            context = "\n\n---\n\n".join(c for c, _ in results)
-            llm = get_llm(selected_model)
-            answer = llm.answer(
-                prompt,
-                context,
-                max_new_tokens=max_tokens,
-                temperature=temperature,
-            )
-            metrics = evaluate_answer(prompt, answer, context, results)
+            with st.spinner("Retrieving context and generating answer (CPU can take 30\u201390s)\u2026"):
+                try:
+                    vs: VectorStore = st.session_state.vector_store
+                    results = vs.search(prompt, top_k=top_k)
+                    context = "\n\n---\n\n".join(c for c, _ in results)
+                    if not context.strip():
+                        answer = (
+                            "I could not retrieve any relevant passages from the document. "
+                            "Try rephrasing the question."
+                        )
+                        metrics = {}
+                        results = []
+                    else:
+                        llm = get_llm(selected_model)
+                        answer = llm.answer(
+                            prompt,
+                            context,
+                            max_new_tokens=max_tokens,
+                            temperature=temperature,
+                        )
+                        metrics = evaluate_answer(prompt, answer, context, results)
+                except Exception as e:
+                    answer = f"Generation failed: {e}"
+                    metrics = {}
+                    results = []
 
             st.session_state.chat_history.append(
                 {
@@ -348,13 +275,16 @@ else:
         st.markdown("#### Document summary")
         st.caption("A concise pass over the indexed text.")
         if st.button("Generate summary", type="primary"):
-            with st.spinner("Writing summary…"):
-                llm = get_llm(selected_model)
-                summary = llm.summarize(
-                    st.session_state.raw_text,
-                    max_new_tokens=max_tokens,
-                    temperature=temperature,
-                )
+            with st.spinner("Writing summary (may take up to a minute on CPU)\u2026"):
+                try:
+                    llm = get_llm(selected_model)
+                    summary = llm.summarize(
+                        st.session_state.raw_text,
+                        max_new_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                except Exception as e:
+                    summary = f"Summary failed: {e}"
                 st.markdown('<div class="answer-card">', unsafe_allow_html=True)
                 st.markdown(summary)
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -363,7 +293,7 @@ else:
         st.markdown("#### Session quality")
         summary_metrics = evaluate_chat_history(st.session_state.chat_history)
         if summary_metrics.get("turns", 0) == 0:
-            st.caption("Chat first — metrics appear per answer and for the session.")
+            st.caption("Chat first \u2014 metrics appear per answer and for the session.")
         else:
             c1, c2, c3 = st.columns(3)
             c1.metric("Turns", summary_metrics["turns"])
@@ -373,6 +303,6 @@ else:
                 st.json(summary_metrics)
 
 st.markdown(
-    '<div class="footer-note">Transformers · sentence-transformers · FAISS · Streamlit</div>',
+    '<div class="footer-note">Transformers \u00b7 sentence-transformers \u00b7 FAISS \u00b7 Streamlit</div>',
     unsafe_allow_html=True,
 )
